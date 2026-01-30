@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSocket } from "./context/SocketContext";
 import "./App.css";
+import WhiteBoard from "./components/WhiteBoard.jsx";
 
 function App() {
   const socket = useSocket();
@@ -20,8 +21,11 @@ function App() {
 
   return (
     <div className="App">
-      <h1>Doodle Quest</h1>
-      <p>Status: {isConnected ? "🟢 Connected" : "🔴 Disconnected"}</p>
+      <h1>DoodleQuest</h1>
+      {/* The Whiteboard takes up most of the screen */}
+      <div className="board-container">
+        <WhiteBoard />
+      </div>
     </div>
   );
 }
