@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useSocket } from "../context/SocketContext";
 
-const WhiteBoard = () => {
+const WhiteBoard = ({roomId}) => {
   const canvasRef = useRef(null);
   const contextRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -65,7 +65,7 @@ const WhiteBoard = () => {
     setIsDrawing(true);
 
     //this is to tell server what current user doing so that it can broadcast
-    socket.emit("begin_path", { x: offsetX, y: offsetY });
+    socket.emit("begin_path", { x: offsetX, y: offsetY  , room:roomId});
   };
 
   const finishDrawing = () => {
@@ -82,7 +82,7 @@ const WhiteBoard = () => {
     contextRef.current.stroke();
 
     //this is to tell server that the current user started drawing
-    socket.emit("draw_line", { x: offsetX, y: offsetY });
+    socket.emit("draw_line", { x: offsetX, y: offsetY , room: roomId});
   };
 
   return (
