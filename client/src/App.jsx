@@ -8,14 +8,16 @@ import PlayerList from "./components/PlayerList.jsx"; // <--- NEW: Import Compon
 
 function App() {
   const socket = useSocket();
-  const [user, setUser] = useState(null); 
+  const [user, setUser] = useState(null);
   const [isGameStarted, setIsGameStarted] = useState(false);
 
   const [isDrawer, setIsDrawer] = useState(false);
   const [secretWord, setSecretWord] = useState("");
-  const [gameStatus, setGameStatus] = useState("waiting"); 
+  const [gameStatus, setGameStatus] = useState("waiting");
 
   const [players, setPlayers] = useState([]); // <--- NEW: State to store player list
+
+  const [timer, setTimer] = useState(0);
 
   useEffect(() => {
     if (!socket) return;
@@ -24,10 +26,10 @@ function App() {
       setGameStatus("playing");
 
       if (socket.id === drawerId) {
-        setIsDrawer(true); 
+        setIsDrawer(true);
       } else {
         setIsDrawer(false);
-        setSecretWord("_ ".repeat(wordLength)); 
+        setSecretWord("_ ".repeat(wordLength));
       }
     };
 
@@ -40,16 +42,21 @@ function App() {
       setPlayers(playerList);
     };
 
+    socket.on("timer_update", (time) => {
+      setTimer(time);
+    });
+
     // <--- NEW: Attach Listeners
     socket.on("game_started", handleGameStart);
     socket.on("your_word", handleWord);
-    socket.on("update_players", handleUpdatePlayers); 
+    socket.on("update_players", handleUpdatePlayers);
 
     return () => {
       // <--- NEW: Detach Listeners
       socket.off("game_started", handleGameStart);
       socket.off("your_word", handleWord);
       socket.off("update_players", handleUpdatePlayers);
+      socket.off("timer_update");
     };
   }, [socket]);
 
@@ -83,7 +90,15 @@ function App() {
                   Start Game
                 </button>
               ) : (
-                <div className="text-center">
+                <div className="flex flex-col items-center">
+                  {/* <--- NEW: TIMER DISPLAY */}
+                  <div
+                    className={`text-2xl font-bold mb-1 ${timer < 10 ? "text-red-600 animate-pulse" : "text-gray-700"}`}
+                  >
+                    ⏱️ {timer}s
+                  </div>
+                  {/* ----------------------- */}
+
                   <p className="text-3xl font-mono tracking-widest font-bold text-gray-800">
                     {secretWord}
                   </p>
@@ -116,15 +131,14 @@ function App() {
             </div>
           </div>
 
-          {/* <--- NEW: 3-COLUMN LAYOUT CONTAINER (Leaderboard + Board + Chat) */}
+          {/* 3-COLUMN LAYOUT CONTAINER */}
           <div className="w-full max-w-7xl h-[600px] border-4 border-gray-800 rounded-xl overflow-hidden shadow-2xl bg-white flex flex-row">
-            
-            {/* <--- NEW: LEFT COLUMN - LEADERBOARD (20%) */}
+            {/* LEFT COLUMN - LEADERBOARD (20%) */}
             <div className="w-1/5 h-full border-r-4 border-gray-800 hidden md:block">
-               <PlayerList players={players} />
+              <PlayerList players={players} />
             </div>
 
-            {/* <--- NEW: MIDDLE COLUMN - WHITEBOARD (60%) */}
+            {/* MIDDLE COLUMN - WHITEBOARD (60%) */}
             <div className="w-3/5 h-full relative border-r-4 border-gray-800">
               <WhiteBoard roomId={user?.roomId} readOnly={!isDrawer} />
               {!isDrawer && (
@@ -132,11 +146,10 @@ function App() {
               )}
             </div>
 
-            {/* <--- NEW: RIGHT COLUMN - CHAT (20%) */}
+            {/* RIGHT COLUMN - CHAT (20%) */}
             <div className="w-1/5 h-full flex flex-col">
               <Chat roomId={user?.roomId} userName={user?.name} />
             </div>
-
           </div>
         </div>
       )}

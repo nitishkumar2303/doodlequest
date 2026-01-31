@@ -1,5 +1,16 @@
 // 1. Define constants
-const WORDS = ["Apple", "Banana", "Car", "Dog", "Elephant", "Guitar", "House", "Pizza", "Rocket", "Tree"];
+const WORDS = [
+  "Apple",
+  "Banana",
+  "Car",
+  "Dog",
+  "Elephant",
+  "Guitar",
+  "House",
+  "Pizza",
+  "Rocket",
+  "Tree",
+];
 
 // 2. Memory Storage
 const rooms = {};
@@ -17,7 +28,7 @@ export const setupSocketEvents = (io) => {
           players: [],
           drawer: null,
           word: null,
-          correctGuesses: []
+          correctGuesses: [],
         };
       }
 
@@ -34,23 +45,53 @@ export const setupSocketEvents = (io) => {
       const roomData = rooms[room];
       if (!roomData) return;
 
+      //clear previous timer
+      if (roomData.timer) {
+        clearInterval(roomData.timer);
+      }
+
       // Reset previous round data
-      roomData.correctGuesses = []; 
+      roomData.correctGuesses = [];
 
       // Pick Drawer & Word
-      const drawer = roomData.players[Math.floor(Math.random() * roomData.players.length)];
+      const drawer =
+        roomData.players[Math.floor(Math.random() * roomData.players.length)];
       roomData.drawer = drawer.id;
-      
+
       const word = WORDS[Math.floor(Math.random() * WORDS.length)];
       roomData.word = word;
 
-      console.log(`Game Started: Room ${room}, Word: ${word}`);
+      let timeLeft = 60;
 
+      io.to(room).emit("timer_update", timeLeft);
+
+      roomData.timer = setInterval(() => {
+        timeLeft--;
+        io.to(room).emit("timer_update", timeLeft);
+
+        if (timeLeft === 0) {
+          // TIME IS UP!
+          clearInterval(roomData.timer);
+
+          // Reveal the word
+          io.to(room).emit("receive_message", {
+            user: "System",
+            message: `Time's up! The word was ${word}`,
+            time: new Date().toLocaleTimeString(),
+          });
+
+          // Optional: Reset drawer so no one can draw anymore
+          roomData.drawer = null;
+          io.to(room).emit("game_over"); // We will handle this in client later
+        }
+      }, 1000);
+
+      console.log(`Game Started: Room ${room}, Word: ${word}`);
+      io.to(room).emit("clear_canvas");
       io.to(room).emit("game_started", {
         drawerId: drawer.id,
-        wordLength: word.length
+        wordLength: word.length,
       });
-
       io.to(drawer.id).emit("your_word", word);
     });
 
@@ -65,7 +106,8 @@ export const setupSocketEvents = (io) => {
       // Check Guess Logic
       const cleanMsg = message.toLowerCase().replace(/[^a-z0-9 ]/g, "");
       const words = cleanMsg.split(" ");
-      const isCorrect = isGameRunning && secretWord && words.includes(secretWord.toLowerCase());
+      const isCorrect =
+        isGameRunning && secretWord && words.includes(secretWord.toLowerCase());
 
       if (isCorrect) {
         if (roomData.drawer === socket.id) return; // Drawer can't guess
@@ -76,11 +118,11 @@ export const setupSocketEvents = (io) => {
 
         // --- SCORING FIX ---
         roomData.correctGuesses.push(socket.id);
-        
+
         // 1. Find and update score
         const player = roomData.players.find((p) => p.id === socket.id);
         if (player) {
-            player.score += 10; 
+          player.score += 10;
         }
 
         // 2. IMPORTANT: Broadcast NEW scores immediately!
@@ -90,9 +132,8 @@ export const setupSocketEvents = (io) => {
         io.to(room).emit("receive_message", {
           user: "System",
           message: `${user} guessed the word!`,
-          time: time
+          time: time,
         });
-
       } else {
         // Normal Chat
         io.to(room).emit("receive_message", { user, message, time });
@@ -129,8 +170,13 @@ export const setupSocketEvents = (io) => {
           }
           break; // User found and removed, stop looping
         }
+
+        //stop timer if player inside room becomes 0;
+        if (room.players.length === 0) {
+          if (room.timer) clearInterval(room.timer);
+          delete rooms[roomId];
+        }
       }
     });
-
   });
 };
