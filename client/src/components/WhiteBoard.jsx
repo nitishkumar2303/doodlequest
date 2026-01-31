@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useSocket } from "../context/SocketContext";
 
-const WhiteBoard = ({roomId}) => {
+const WhiteBoard = ({roomId , readOnly}) => {
   const canvasRef = useRef(null);
   const contextRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -54,6 +54,7 @@ const WhiteBoard = ({roomId}) => {
   }, [socket]);
 
   const startDrawing = (e) => {
+    if(readOnly) return;
     //we just need native event to work with
     const nativeEvent = e.nativeEvent;
 
