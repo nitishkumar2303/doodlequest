@@ -3,15 +3,19 @@ import { useSocket } from "./context/SocketContext";
 import "./App.css";
 import WhiteBoard from "./components/WhiteBoard.jsx";
 import Lobby from "./components/Lobby.jsx";
+import Chat from "./components/Chat.jsx";
+import PlayerList from "./components/PlayerList.jsx"; // <--- NEW: Import Component
 
 function App() {
   const socket = useSocket();
-  const [user, setUser] = useState(null); // Tracks { name, roomId }
+  const [user, setUser] = useState(null); 
   const [isGameStarted, setIsGameStarted] = useState(false);
 
   const [isDrawer, setIsDrawer] = useState(false);
   const [secretWord, setSecretWord] = useState("");
-  const [gameStatus, setGameStatus] = useState("waiting"); // waiting, playing
+  const [gameStatus, setGameStatus] = useState("waiting"); 
+
+  const [players, setPlayers] = useState([]); // <--- NEW: State to store player list
 
   useEffect(() => {
     if (!socket) return;
@@ -20,10 +24,10 @@ function App() {
       setGameStatus("playing");
 
       if (socket.id === drawerId) {
-        setIsDrawer(true); // FIX: Use function, not assignment
+        setIsDrawer(true); 
       } else {
         setIsDrawer(false);
-        setSecretWord("_ ".repeat(wordLength)); // Show blanks to guessers
+        setSecretWord("_ ".repeat(wordLength)); 
       }
     };
 
@@ -31,20 +35,26 @@ function App() {
       setSecretWord(word);
     };
 
+    // <--- NEW: Function to handle player updates (scores/joins)
+    const handleUpdatePlayers = (playerList) => {
+      setPlayers(playerList);
+    };
+
+    // <--- NEW: Attach Listeners
     socket.on("game_started", handleGameStart);
     socket.on("your_word", handleWord);
+    socket.on("update_players", handleUpdatePlayers); 
 
     return () => {
+      // <--- NEW: Detach Listeners
       socket.off("game_started", handleGameStart);
       socket.off("your_word", handleWord);
+      socket.off("update_players", handleUpdatePlayers);
     };
   }, [socket]);
 
   const joinRoom = ({ name, roomId }) => {
-    // 1. Tell Server to join the room
     socket.emit("join_room", { room: roomId, name: name });
-
-    // 2. Save local state
     setUser({ name, roomId });
     setIsGameStarted(true);
   };
@@ -60,7 +70,7 @@ function App() {
       ) : (
         <div className="flex flex-col items-center p-4">
           {/* TOP BAR */}
-          <div className="w-full max-w-6xl bg-white shadow-md rounded-lg p-4 mb-4 flex justify-between items-center">
+          <div className="w-full max-w-7xl bg-white shadow-md rounded-lg p-4 mb-4 flex justify-between items-center">
             <h1 className="text-2xl font-bold text-blue-600">DoodleQuest</h1>
 
             {/* CENTER: Game Controls & Status */}
@@ -106,19 +116,27 @@ function App() {
             </div>
           </div>
 
-          {/* GAME BOARD */}
-          <div className="w-full max-w-6xl aspect-video border-4 border-gray-800 rounded-xl overflow-hidden shadow-2xl bg-white relative">
-            <WhiteBoard
-              roomId={user?.roomId}
-              readOnly={!isDrawer} // FIX: Lock canvas if not drawer
-            />
+          {/* <--- NEW: 3-COLUMN LAYOUT CONTAINER (Leaderboard + Board + Chat) */}
+          <div className="w-full max-w-7xl h-[600px] border-4 border-gray-800 rounded-xl overflow-hidden shadow-2xl bg-white flex flex-row">
+            
+            {/* <--- NEW: LEFT COLUMN - LEADERBOARD (20%) */}
+            <div className="w-1/5 h-full border-r-4 border-gray-800 hidden md:block">
+               <PlayerList players={players} />
+            </div>
 
-            {/* Overlay for guessers if needed, or just rely on readOnly */}
-            {!isDrawer && gameStatus === "playing" && (
-              <div className="absolute top-4 right-4 pointer-events-none">
-                {/* Optional: Visual cue that they can't draw */}
-              </div>
-            )}
+            {/* <--- NEW: MIDDLE COLUMN - WHITEBOARD (60%) */}
+            <div className="w-3/5 h-full relative border-r-4 border-gray-800">
+              <WhiteBoard roomId={user?.roomId} readOnly={!isDrawer} />
+              {!isDrawer && (
+                <div className="absolute inset-0 z-10 cursor-default"></div>
+              )}
+            </div>
+
+            {/* <--- NEW: RIGHT COLUMN - CHAT (20%) */}
+            <div className="w-1/5 h-full flex flex-col">
+              <Chat roomId={user?.roomId} userName={user?.name} />
+            </div>
+
           </div>
         </div>
       )}
