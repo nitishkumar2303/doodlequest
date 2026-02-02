@@ -141,8 +141,8 @@ export const setupSocketEvents = (io) => {
     });
 
     // --- DRAWING ---
-    socket.on("begin_path", ({ x, y, room }) => {
-      socket.to(room).emit("begin_path", { x, y });
+    socket.on("begin_path", ({ x, y, room , colour , size }) => {
+      socket.to(room).emit("begin_path", { x, y , colour , size });
     });
 
     socket.on("draw_line", ({ x, y, room }) => {

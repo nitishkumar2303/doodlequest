@@ -5,6 +5,7 @@ import WhiteBoard from "./components/WhiteBoard.jsx";
 import Lobby from "./components/Lobby.jsx";
 import Chat from "./components/Chat.jsx";
 import PlayerList from "./components/PlayerList.jsx"; // <--- NEW: Import Component
+import { Color } from "three/src/Three.Core.js";
 
 function App() {
   const socket = useSocket();
@@ -18,6 +19,8 @@ function App() {
   const [players, setPlayers] = useState([]); // <--- NEW: State to store player list
 
   const [timer, setTimer] = useState(0);
+
+  const [tool, setTool] = useState({ color: "black", size: 5 });
 
   useEffect(() => {
     if (!socket) return;
@@ -46,10 +49,18 @@ function App() {
       setTimer(time);
     });
 
+    const handleGameOver = () => {
+      setGameStatus("waiting");
+      setSecretWord("Round Over");
+      setIsDrawer(flase);
+      setTimer(0);
+    };
+
     // <--- NEW: Attach Listeners
     socket.on("game_started", handleGameStart);
     socket.on("your_word", handleWord);
     socket.on("update_players", handleUpdatePlayers);
+    socket.on("game_over", handleGameOver);
 
     return () => {
       // <--- NEW: Detach Listeners
@@ -57,6 +68,7 @@ function App() {
       socket.off("your_word", handleWord);
       socket.off("update_players", handleUpdatePlayers);
       socket.off("timer_update");
+      socket.off("game_over", handleGameOver);
     };
   }, [socket]);
 
@@ -91,13 +103,12 @@ function App() {
                 </button>
               ) : (
                 <div className="flex flex-col items-center">
-                  {/* <--- NEW: TIMER DISPLAY */}
+                  {/* TIMER DISPLAY */}
                   <div
                     className={`text-2xl font-bold mb-1 ${timer < 10 ? "text-red-600 animate-pulse" : "text-gray-700"}`}
                   >
                     ⏱️ {timer}s
                   </div>
-                  {/* ----------------------- */}
 
                   <p className="text-3xl font-mono tracking-widest font-bold text-gray-800">
                     {secretWord}
@@ -139,11 +150,51 @@ function App() {
             </div>
 
             {/* MIDDLE COLUMN - WHITEBOARD (60%) */}
-            <div className="w-3/5 h-full relative border-r-4 border-gray-800">
-              <WhiteBoard roomId={user?.roomId} readOnly={!isDrawer} />
-              {!isDrawer && (
-                <div className="absolute inset-0 z-10 cursor-default"></div>
+            {/* Added 'flex flex-col' to handle Toolbar + Board stacking */}
+            <div className="w-3/5 h-full relative border-r-4 border-gray-800 flex flex-col">
+              {/* --- NEW: TOOLBAR (Only show if Drawer) --- */}
+              {isDrawer && (
+                <div className="bg-gray-100 p-2 flex justify-center gap-4 border-b-2 border-gray-300 shrink-0">
+                  {/* PENCIL BUTTON */}
+                  <button
+                    onClick={() => setTool({ color: "black", size: 5 })}
+                    className={`flex items-center gap-2 px-4 py-1 rounded font-bold transition ${
+                      tool.color === "black"
+                        ? "bg-blue-600 text-white shadow-lg"
+                        : "bg-white text-gray-700 border hover:bg-gray-50"
+                    }`}
+                  >
+                    ✏️ Pencil
+                  </button>
+
+                  {/* ERASER BUTTON */}
+                  <button
+                    onClick={() => setTool({ color: "white", size: 20 })}
+                    className={`flex items-center gap-2 px-4 py-1 rounded font-bold transition ${
+                      tool.color === "white"
+                        ? "bg-blue-600 text-white shadow-lg"
+                        : "bg-white text-gray-700 border hover:bg-gray-50"
+                    }`}
+                  >
+                    🧼 Eraser
+                  </button>
+                </div>
               )}
+
+              {/* WHITEBOARD AREA */}
+              <div className="flex-1 relative w-full h-full">
+                <WhiteBoard
+                  roomId={user?.roomId}
+                  readOnly={!isDrawer}
+                  color={tool.color} // <--- Pass Color State
+                  size={tool.size} // <--- Pass Size State
+                />
+
+                {/* Blocker for Guessers */}
+                {!isDrawer && (
+                  <div className="absolute inset-0 z-10 cursor-default"></div>
+                )}
+              </div>
             </div>
 
             {/* RIGHT COLUMN - CHAT (20%) */}
