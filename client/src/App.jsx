@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { use, useEffect, useState } from "react";
 import { useSocket } from "./context/SocketContext";
 import "./App.css";
 
@@ -110,7 +110,7 @@ function App() {
     if (!user) return; // Safety check
     
     // We send the 'username' from our database, so no one can fake a name.
-    socket.emit("join_room", { room: roomId, name: user.username });
+    socket.emit("join_room", { room: roomId, name: user.username , userId: user.id });
     
     // Update local state so UI knows we are in a room
     setUser((prev) => ({ ...prev, roomId }));
