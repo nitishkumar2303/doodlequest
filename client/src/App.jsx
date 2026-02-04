@@ -22,7 +22,11 @@ function App() {
   const [gameStatus, setGameStatus] = useState("waiting");
   const [timer, setTimer] = useState(0);
 
-  // NEW: Winner State for Victory Screen
+  // NEW: Host & Ready State
+  const [hostId, setHostId] = useState(null);
+  const [amIReady, setAmIReady] = useState(false);
+
+  // Winner State for Victory Screen
   const [winner, setWinner] = useState(null);
 
   // Data for the UI
@@ -43,6 +47,7 @@ function App() {
 
     const handleGameStart = ({ drawerId, wordLength }) => {
       setGameStatus("playing");
+      setAmIReady(false); // Reset ready status on game start
       if (socket.id === drawerId) {
         setIsDrawer(true);
       } else {
@@ -63,22 +68,31 @@ function App() {
       setTimer(time);
     };
 
-    // UPDATED: Handle Game Over & Show Winner
     const handleGameOver = ({ winnerName, winnerScore }) => {
-      // 1. Set Winner Data (Triggers Overlay)
       setWinner({ name: winnerName, score: winnerScore });
-
-      // 2. Reset Game State
       setGameStatus("waiting");
       setSecretWord("Round Over");
       setIsDrawer(false);
       setTimer(0);
+      setAmIReady(false); // Reset ready for next round
 
-      // 3. Clear Winner after 5 seconds (Auto-hide overlay)
       setTimeout(() => {
         setWinner(null);
         setSecretWord("");
       }, 5000);
+    };
+
+    // --- NEW: Handle Room Data (Host Info) ---
+    const handleRoomData = ({ hostId }) => {
+      setHostId(hostId);
+    };
+
+    // --- NEW: Handle Being Kicked ---
+    const handleKicked = () => {
+      alert("You were kicked from the room.");
+      setGameStatus("waiting");
+      setIsGameStarted(false);
+      setUser((prev) => ({ ...prev, roomId: null }));
     };
 
     socket.on("game_started", handleGameStart);
@@ -86,6 +100,8 @@ function App() {
     socket.on("update_players", handleUpdatePlayers);
     socket.on("game_over", handleGameOver);
     socket.on("timer_update", handleTimerUpdate);
+    socket.on("room_data", handleRoomData); // Listen for host updates
+    socket.on("kicked", handleKicked); // Listen for kicks
 
     return () => {
       socket.off("game_started", handleGameStart);
@@ -93,6 +109,8 @@ function App() {
       socket.off("update_players", handleUpdatePlayers);
       socket.off("timer_update", handleTimerUpdate);
       socket.off("game_over", handleGameOver);
+      socket.off("room_data", handleRoomData);
+      socket.off("kicked", handleKicked);
     };
   }, [socket]);
 
@@ -106,6 +124,7 @@ function App() {
     });
     setUser((prev) => ({ ...prev, roomId }));
     setIsGameStarted(true);
+    setAmIReady(false);
   };
 
   const handleStartGame = () => {
@@ -123,13 +142,26 @@ function App() {
     setIsGameStarted(false);
   };
 
+  // --- NEW ACTIONS ---
+  const handleKick = (targetSocketId) => {
+    socket.emit("kick_player", { room: user.roomId, targetSocketId });
+  };
+
+  const handleToggleReady = () => {
+    const newReadyStatus = !amIReady;
+    setAmIReady(newReadyStatus);
+    socket.emit("toggle_ready", user.roomId);
+  };
+
+  const amIHost = socket?.id === hostId;
+
   if (!user) {
     return <AuthPage onAuthSuccess={handleAuthSuccess} />;
   }
 
   return (
     <div className="min-h-screen bg-gray-100 font-sans relative">
-      {/* --- NEW: VICTORY OVERLAY --- */}
+      {/* --- VICTORY OVERLAY --- */}
       {winner && (
         <div className="fixed inset-0 bg-black/80 flex flex-col items-center justify-center z-50">
           <div className="bg-white p-10 rounded-3xl shadow-2xl text-center border-8 border-yellow-400 transform scale-110 transition-transform">
@@ -163,18 +195,43 @@ function App() {
           <div className="w-full max-w-7xl bg-white shadow-md rounded-lg p-4 mb-4 flex justify-between items-center">
             <h1 className="text-2xl font-bold text-blue-600">DoodleQuest</h1>
 
+            {/* CENTER: Game Controls & Status */}
             <div className="flex flex-col items-center">
               {gameStatus === "waiting" ? (
-                <button
-                  onClick={handleStartGame}
-                  className="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-full font-bold shadow transition"
-                >
-                  Start Game
-                </button>
+                <div className="flex flex-col items-center gap-2">
+                  {/* HOST sees START, OTHERS see READY */}
+                  {amIHost ? (
+                    <button
+                      onClick={handleStartGame}
+                      className="bg-green-500 hover:bg-green-600 text-white px-8 py-2 rounded-full font-black text-lg shadow-lg transition transform hover:scale-105"
+                    >
+                      START GAME
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleToggleReady}
+                      className={`px-8 py-2 rounded-full font-black text-lg shadow-lg transition transform hover:scale-105 ${
+                        amIReady
+                          ? "bg-gray-400 text-gray-700 hover:bg-gray-500"
+                          : "bg-blue-500 text-white hover:bg-blue-600"
+                      }`}
+                    >
+                      {amIReady ? "NOT READY" : "I'M READY!"}
+                    </button>
+                  )}
+
+                  {!amIHost && amIReady && (
+                    <p className="text-xs text-gray-500 animate-pulse">
+                      Waiting for host...
+                    </p>
+                  )}
+                </div>
               ) : (
                 <div className="flex flex-col items-center">
                   <div
-                    className={`text-2xl font-bold mb-1 ${timer < 10 ? "text-red-600 animate-pulse" : "text-gray-700"}`}
+                    className={`text-2xl font-bold mb-1 ${
+                      timer < 10 ? "text-red-600 animate-pulse" : "text-gray-700"
+                    }`}
                   >
                     ⏱️ {timer}s
                   </div>
@@ -190,6 +247,7 @@ function App() {
               )}
             </div>
 
+            {/* RIGHT: User Profile & Role */}
             <div className="flex items-center gap-4">
               <div className="text-right">
                 <p className="font-bold text-gray-800">{user?.username}</p>
@@ -198,35 +256,54 @@ function App() {
                 </p>
               </div>
               <div
-                className={`px-4 py-2 rounded-full text-sm font-bold ${isDrawer ? "bg-yellow-100 text-yellow-800" : "bg-gray-100 text-gray-600"}`}
+                className={`px-4 py-2 rounded-full text-sm font-bold ${
+                  isDrawer
+                    ? "bg-yellow-100 text-yellow-800"
+                    : "bg-gray-100 text-gray-600"
+                }`}
               >
                 {gameStatus === "waiting"
                   ? "Waiting..."
                   : isDrawer
-                    ? "✏️ Drawer"
-                    : "👀 Guesser"}
+                  ? "✏️ Drawer"
+                  : "👀 Guesser"}
               </div>
             </div>
           </div>
 
           {/* GAME COLUMNS */}
           <div className="w-full max-w-7xl h-[600px] border-4 border-gray-800 rounded-xl overflow-hidden shadow-2xl bg-white flex flex-row">
+            {/* COLUMN 1: Leaderboard (Updated with Host/Kick Props) */}
             <div className="w-1/5 h-full border-r-4 border-gray-800 hidden md:block">
-              <PlayerList players={players} />
+              <PlayerList
+                players={players}
+                currentUserId={socket?.id}
+                hostId={hostId}
+                onKick={handleKick}
+              />
             </div>
 
+            {/* COLUMN 2: Whiteboard & Tools */}
             <div className="w-3/5 h-full relative border-r-4 border-gray-800 flex flex-col">
               {isDrawer && (
                 <div className="bg-gray-100 p-2 flex justify-center gap-4 border-b-2 border-gray-300 shrink-0">
                   <button
                     onClick={() => setTool({ color: "black", size: 5 })}
-                    className={`flex items-center gap-2 px-4 py-1 rounded font-bold transition ${tool.color === "black" ? "bg-blue-600 text-white shadow-lg" : "bg-white text-gray-700 border hover:bg-gray-50"}`}
+                    className={`flex items-center gap-2 px-4 py-1 rounded font-bold transition ${
+                      tool.color === "black"
+                        ? "bg-blue-600 text-white shadow-lg"
+                        : "bg-white text-gray-700 border hover:bg-gray-50"
+                    }`}
                   >
                     ✏️ Pencil
                   </button>
                   <button
                     onClick={() => setTool({ color: "white", size: 20 })}
-                    className={`flex items-center gap-2 px-4 py-1 rounded font-bold transition ${tool.color === "white" ? "bg-blue-600 text-white shadow-lg" : "bg-white text-gray-700 border hover:bg-gray-50"}`}
+                    className={`flex items-center gap-2 px-4 py-1 rounded font-bold transition ${
+                      tool.color === "white"
+                        ? "bg-blue-600 text-white shadow-lg"
+                        : "bg-white text-gray-700 border hover:bg-gray-50"
+                    }`}
                   >
                     🧼 Eraser
                   </button>
@@ -246,6 +323,7 @@ function App() {
               </div>
             </div>
 
+            {/* COLUMN 3: Chat */}
             <div className="w-1/5 h-full flex flex-col">
               <Chat roomId={user?.roomId} userName={user?.username} />
             </div>
