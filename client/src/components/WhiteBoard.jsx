@@ -2,15 +2,26 @@ import { useEffect, useRef, useState } from "react";
 import { useSocket } from "../context/SocketContext";
 
 const WhiteBoard = ({ roomId, readOnly, color, size }) => {
+  // --------------------------------------------------------------------------
+  // REFS & STATE
+  // --------------------------------------------------------------------------
+  
+  // Reference to the actual <canvas> DOM element
   const canvasRef = useRef(null);
+  
+  // Reference to the 2D Drawing Context (The "Brush" that draws pixels)
   const contextRef = useRef(null);
+  
+  // Are we currently holding the mouse down?
   const [isDrawing, setIsDrawing] = useState(false);
+  
+  // Socket connection to send/receive drawing data
   const socket = useSocket();
 
-//   --------------------------------------------------------------------------------------------------
-
-  // This effect handles setting up the canvas, High DPI screens,
-  // and resizing the canvas when the browser window changes.
+  // --------------------------------------------------------------------------
+  // 1. CANVAS SETUP & RESIZING LOGIC
+  // This effect ensures the canvas is sharp (High DPI) and fits the screen.
+  // --------------------------------------------------------------------------
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -18,53 +29,54 @@ const WhiteBoard = ({ roomId, readOnly, color, size }) => {
     const parent = canvas.parentElement;
     const ctx = canvas.getContext("2d");
 
-
+    // Function to calculate exact pixel size
     const resize = () => {
       // A. Get exact size of the parent container
       const rect = parent ? parent.getBoundingClientRect() : null;
 
-      // Fallback logic if parent isn't ready yet
+      // Fallback logic if parent isn't ready yet (e.g., during first render)
       const parentWidth =
         rect?.width || parent?.clientWidth || window.innerWidth;
       const parentHeight =
         rect?.height || parent?.clientHeight || window.innerHeight;
 
-      // Safety: If size is 0 (hidden), wait for next frame
+      // Safety: If hidden (size 0), try again in the next frame
       if (parent && (parentWidth === 0 || parentHeight === 0)) {
         requestAnimationFrame(resize);
         return;
       }
 
       // B. Handle High DPI (Retina) Screens
-      // Standard screens are 1, Retina is 2 or 3.
-      // We multiply canvas size by this to make lines sharp, not blurry.
+      // Standard screens are 1x, Retina/Phones are 2x or 3x.
+      // We multiply canvas internal pixels by this scale to make lines sharp.
       const scale = window.devicePixelRatio || 1;
 
       canvas.width = Math.floor(parentWidth * scale);
       canvas.height = Math.floor(parentHeight * scale);
 
-      // CSS keeps it the visual size we want, while internal pixels are higher
+      // C. CSS Styling (Visual Size)
+      // This keeps it looking the correct size on screen, even if pixels are doubled internally.
       canvas.style.width = `${parentWidth}px`;
       canvas.style.height = `${parentHeight}px`;
 
-      // C. Reset Context & Scale
-      // We scale the context so drawing 1px actually fills 'scale' amount of pixels
+      // D. Reset Context & Apply Scale
+      // We scale the context so drawing "1px" actually fills "scale" amount of pixels.
       ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset any previous transforms
       ctx.scale(scale, scale);
 
-      // D. Define Brush Style
-      ctx.lineCap = "round"; // Smooth edges
-      ctx.strokeStyle = "black"; // Color
-      ctx.lineWidth = 5; // Thickness
+      // E. Default Brush Style
+      ctx.lineCap = "round"; // Smooth rounded edges for lines
+      ctx.strokeStyle = "black"; // Default color
+      ctx.lineWidth = 5; // Default thickness
 
       contextRef.current = ctx;
     };
 
-    // Run once on mount
+    // Run once immediately on mount
     resize();
 
-    // E. Add a "ResizeObserver" to watch the parent div
-    // This is better than window.resize because it works if the sidebar opens/closes
+    // F. Add a "ResizeObserver" to watch the parent div
+    // This is better than window.resize because it detects if the sidebar opens/closes.
     let ro;
     if (parent && typeof ResizeObserver !== "undefined") {
       ro = new ResizeObserver(resize);
@@ -80,14 +92,15 @@ const WhiteBoard = ({ roomId, readOnly, color, size }) => {
     };
   }, []);
 
-//---------------------------------------------------------------------------------------------------
-
-  // SOCKET COMMUNICATION
-  // This effect listens for drawing events from OTHER players
+  // --------------------------------------------------------------------------
+  // 2. SOCKET LISTENERS (Receiving Data)
+  // This listens for drawing events from OTHER players and renders them.
+  // --------------------------------------------------------------------------
   useEffect(() => {
     if (!socket) return;
 
     // A. Received "Start Line" from server
+    // Someone else put their pen down. Move our invisible brush to that spot.
     const handleBeginPath = ({ x, y, colour, size }) => {
       const ctx = contextRef.current;
       if (!ctx) return;
@@ -98,6 +111,7 @@ const WhiteBoard = ({ roomId, readOnly, color, size }) => {
     };
 
     // B. Received "Draw Line" from server
+    // Someone else moved their pen. Draw a line to the new coordinates.
     const handleDrawLine = ({ x, y }) => {
       const ctx = contextRef.current;
       if (!ctx) return;
@@ -112,8 +126,7 @@ const WhiteBoard = ({ roomId, readOnly, color, size }) => {
       if (!canvas || !ctx) return;
 
       // Wipe the entire board clean
-      // Note: We use canvas.width/scale because we scaled the context earlier
-      // But simplest way is often just clearing the raw pixel width/height:
+      // Note: We use canvas.width because 'clearRect' works on raw pixels
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     };
 
@@ -122,7 +135,7 @@ const WhiteBoard = ({ roomId, readOnly, color, size }) => {
     socket.on("draw_line", handleDrawLine);
     socket.on("clear_canvas", handleClearCanvas);
 
-    // Cleanup Listeners (Prevents memory leaks/double drawing)
+    // Cleanup Listeners (Prevents ghost drawing or memory leaks)
     return () => {
       socket.off("begin_path", handleBeginPath);
       socket.off("draw_line", handleDrawLine);
@@ -130,24 +143,28 @@ const WhiteBoard = ({ roomId, readOnly, color, size }) => {
     };
   }, [socket]);
 
-//-------------------------------------------------------------------------------------------------
+  // --------------------------------------------------------------------------
+  // 3. MOUSE HANDLERS (My Drawing Logic)
+  // --------------------------------------------------------------------------
 
-  // 3. MOUSE EVENT HANDLERS (My Drawing Logic)
+  // MOUSE DOWN: Start a new line
   const startDrawing = (e) => {
-    // A. Guard Clause: If I am a Guesser, stop immediately.
+    // Guard Clause: If I am a Guesser (readOnly), stop immediately.
     if (readOnly) return;
 
     const { offsetX, offsetY } = e.nativeEvent;
-
     const ctx = contextRef.current;
-    ctx.beginPath();
-    ctx.moveTo(offsetX, offsetY);
 
+    ctx.beginPath(); // Start fresh path
+    ctx.moveTo(offsetX, offsetY); // Move brush to mouse position
+
+    // Apply current selected tool settings
     ctx.strokeStyle = color;
     ctx.lineWidth = size;
+    
     setIsDrawing(true);
 
-    // B. Emit to Server (So others see my pen go down)
+    // Emit to Server (So others see my pen go down)
     socket.emit("begin_path", {
       x: offsetX,
       y: offsetY,
@@ -157,43 +174,42 @@ const WhiteBoard = ({ roomId, readOnly, color, size }) => {
     });
   };
 
-//----------------------------------------------------------------------------------------------------
-
+  // MOUSE MOVE: Continue drawing the line
   const draw = (e) => {
     if (!isDrawing) return; // Don't draw if mouse isn't held down
 
     const { offsetX, offsetY } = e.nativeEvent;
 
+    // Draw locally immediately (for zero latency feel)
     contextRef.current.lineTo(offsetX, offsetY);
     contextRef.current.stroke();
 
-    // C. Emit to Server (So others see the line)
+    // Emit to Server (So others see the line)
     socket.emit("draw_line", { x: offsetX, y: offsetY, room: roomId });
   };
 
-//----------------------------------------------------------------------------------------------------   
-
+  // MOUSE UP / LEAVE: Stop drawing
   const finishDrawing = () => {
-    // Stop drawing when mouse is released or leaves canvas
     contextRef.current.closePath();
     setIsDrawing(false);
   };
 
-//--------------------------------------------------------------------------------------------------------   
-
+  // --------------------------------------------------------------------------
+  // RENDER UI
+  // --------------------------------------------------------------------------
   return (
     <canvas
       ref={canvasRef}
       onMouseDown={startDrawing}
       onMouseUp={finishDrawing}
       onMouseMove={draw}
-      onMouseLeave={finishDrawing} // Added for safety (if mouse leaves box)
+      onMouseLeave={finishDrawing} // Added safety: stop drawing if mouse leaves box
       style={{
         border: "2px solid black",
         background: "white",
         width: "100%",
         height: "100%",
-        cursor: readOnly ? "not-allowed" : "crosshair", // Visual feedback
+        cursor: readOnly ? "not-allowed" : "crosshair", // Visual feedback for Guessers
       }}
     />
   );

@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { useSocket } from "./context/SocketContext";
 import "./App.css";
 
-// Components
+// Importing all our sub-components. 
+// These handle specific parts of the game (Drawing, Chatting, Player List, etc.)
 import WhiteBoard from "./components/WhiteBoard.jsx";
 import Lobby from "./components/Lobby.jsx";
 import Chat from "./components/Chat.jsx";
@@ -10,73 +11,119 @@ import PlayerList from "./components/PlayerList.jsx";
 import AuthPage from "./components/AuthPage.jsx";
 
 function App() {
+  // We use our custom hook to get the active socket connection.
+  // This is the bridge that lets us talk to the backend server.
   const socket = useSocket();
 
-  // --- STATE MANAGEMENT ---
-  const [user, setUser] = useState(null);
+  // --------------------------------------------------------------------------
+  // 1. STATE MANAGEMENT
+  // This is where we keep track of everything happening in the app.
+  // --------------------------------------------------------------------------
+  
+  // Who is currently logged in? (id, username, room they are in)
+  const [user, setUser] = useState(null); 
+  
+  // Are we in the Lobby (false) or inside a Game Room (true)?
   const [isGameStarted, setIsGameStarted] = useState(false);
 
-  // Game Logic States
-  const [isDrawer, setIsDrawer] = useState(false);
-  const [secretWord, setSecretWord] = useState("");
-  const [gameStatus, setGameStatus] = useState("waiting");
-  const [timer, setTimer] = useState(0);
+  // --- Game Mechanics ---
+  const [isDrawer, setIsDrawer] = useState(false); // True if it's MY turn to draw
+  const [secretWord, setSecretWord] = useState(""); // The word to draw OR underscores for guessers
+  const [gameStatus, setGameStatus] = useState("waiting"); // 'waiting' = Lobby phase, 'playing' = Timer running
+  const [timer, setTimer] = useState(0); // The countdown timer shown at the top
 
-  // Host & Ready State
-  const [hostId, setHostId] = useState(null);
-  const [amIReady, setAmIReady] = useState(false);
+  // --- Room Coordination ---
+  const [hostId, setHostId] = useState(null); // The socket ID of the room owner (boss)
+  const [amIReady, setAmIReady] = useState(false); // Tracks if I clicked the "Ready" button
 
-  // Winner State
-  const [winner, setWinner] = useState(null);
+  // --- Victory Screen ---
+  const [winner, setWinner] = useState(null); // If this has data, we show the big Trophy overlay
 
-  // UI Data
-  const [players, setPlayers] = useState([]);
-  const [tool, setTool] = useState({ color: "black", size: 5 });
+  // --- UI Data ---
+  const [players, setPlayers] = useState([]); // List of everyone in the room (for the leaderboard)
+  const [tool, setTool] = useState({ color: "black", size: 5 }); // My current pencil settings
 
-  // --- EFFECT 1: CHECK LOGIN ---
+  // --------------------------------------------------------------------------
+  // 2. INITIALIZATION
+  // --------------------------------------------------------------------------
+
+  // When the app loads, check if the user was already logged in previously.
+  // If yes, we restore their session so they don't have to login again.
   useEffect(() => {
     const savedUser = localStorage.getItem("user");
-    if (savedUser) setUser(JSON.parse(savedUser));
+    if (savedUser) {
+      setUser(JSON.parse(savedUser));
+    }
   }, []);
 
-  // --- EFFECT 2: SOCKET LISTENERS ---
+  // --------------------------------------------------------------------------
+  // 3. SOCKET EVENT LISTENERS
+  // This is the most important part! We listen for messages from the server.
+  // --------------------------------------------------------------------------
   useEffect(() => {
+    // If the socket isn't ready yet, don't do anything.
     if (!socket) return;
 
+    // EVENT: The host started the game!
     const handleGameStart = ({ drawerId, wordLength }) => {
-      setGameStatus("playing");
-      setAmIReady(false);
+      setGameStatus("playing"); // Switch UI to game mode
+      setAmIReady(false); // Reset ready status so I'm not stuck as "Ready" for the next round
+      
+      // Check if I am the chosen one (The Drawer)
       if (socket.id === drawerId) {
-        setIsDrawer(true);
+        setIsDrawer(true); // Enable my whiteboard tools
       } else {
-        setIsDrawer(false);
-        setSecretWord("_ ".repeat(wordLength));
+        setIsDrawer(false); // Disable my whiteboard (View Only)
+        setSecretWord("_ ".repeat(wordLength)); // Show mystery blanks (e.g. "_ _ _ _")
       }
     };
 
-    const handleWord = (word) => setSecretWord(word);
-    const handleUpdatePlayers = (playerList) => setPlayers(playerList);
-    const handleTimerUpdate = (time) => setTimer(time);
-    const handleRoomData = ({ hostId }) => setHostId(hostId);
+    // EVENT: Receive the secret word (Only the Drawer gets the real word)
+    const handleWord = (word) => {
+      setSecretWord(word);
+    };
 
+    // EVENT: Someone joined, left, or changed score. Update the list.
+    const handleUpdatePlayers = (playerList) => {
+      setPlayers(playerList);
+    };
+
+    // EVENT: The server sent a timer update (tick... tock...)
+    const handleTimerUpdate = (time) => {
+      setTimer(time);
+    };
+
+    // EVENT: Update who the Host is (in case the old host disconnected)
+    const handleRoomData = ({ hostId }) => {
+      setHostId(hostId);
+    };
+
+    // EVENT: The round finished! Show who won.
     const handleGameOver = ({ winnerName, winnerScore }) => {
+      // 1. Show the Victory Overlay
       setWinner({ name: winnerName, score: winnerScore });
+      
+      // 2. Reset the game state back to "Waiting" mode
       setGameStatus("waiting");
       setSecretWord("Round Over");
       setIsDrawer(false);
       setTimer(0);
-      setAmIReady(false);
+      setAmIReady(false); // Important: Force everyone to click Ready again for next round
+      
+      // 3. Hide the overlay after 5 seconds automatically
       setTimeout(() => {
         setWinner(null);
         setSecretWord("");
       }, 5000);
     };
 
+    // EVENT: I got kicked out of the room by the Host.
     const handleKicked = () => {
       alert("You were kicked from the room.");
-      handleLeaveRoom(); // Reuse logic
+      handleLeaveRoom(); // Trigger the leave logic to clean up my screen
     };
 
+    // --- Attach all these listeners to the socket ---
     socket.on("game_started", handleGameStart);
     socket.on("your_word", handleWord);
     socket.on("update_players", handleUpdatePlayers);
@@ -85,6 +132,8 @@ function App() {
     socket.on("room_data", handleRoomData);
     socket.on("kicked", handleKicked);
 
+    // --- Cleanup: Remove listeners when this component unmounts ---
+    // This prevents bugs where events fire multiple times.
     return () => {
       socket.off("game_started", handleGameStart);
       socket.off("your_word", handleWord);
@@ -94,21 +143,40 @@ function App() {
       socket.off("room_data", handleRoomData);
       socket.off("kicked", handleKicked);
     };
-  }, [socket]);
+  }, [socket]); // Run this effect whenever the 'socket' object changes
 
-  // --- ACTIONS ---
+  // --------------------------------------------------------------------------
+  // 4. ACTION HANDLERS (Button Clicks)
+  // --------------------------------------------------------------------------
+
+  // Called when user enters a Room ID in the Lobby
   const joinRoom = ({ roomId }) => {
     if (!user) return;
-    socket.emit("join_room", { room: roomId, name: user.username, userId: user.id });
+    
+    // Tell server we are joining
+    socket.emit("join_room", { 
+      room: roomId, 
+      name: user.username, 
+      userId: user.id 
+    });
+    
+    // Update local state to show the Game UI
     setUser((prev) => ({ ...prev, roomId }));
     setIsGameStarted(true);
     setAmIReady(false);
   };
 
-  const handleStartGame = () => socket.emit("start_game", user.roomId);
+  // Called when Host clicks "Start Game"
+  const handleStartGame = () => {
+    socket.emit("start_game", user.roomId);
+  };
 
-  const handleAuthSuccess = (userData) => setUser(userData);
+  // Called when AuthPage finishes login successfully
+  const handleAuthSuccess = (userData) => {
+    setUser(userData);
+  };
 
+  // Log out: Clear everything and go back to Login screen
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
@@ -116,8 +184,12 @@ function App() {
     setIsGameStarted(false);
   };
 
+  // Gracefully leave the room without logging out entirely
   const handleLeaveRoom = () => {
-    if (user?.roomId) socket.emit("leave_room", { room: user.roomId });
+    if (user?.roomId) {
+      socket.emit("leave_room", { room: user.roomId });
+    }
+    // Reset all game state so we are fresh for the next room
     setGameStatus("waiting");
     setIsGameStarted(false);
     setPlayers([]);
@@ -125,22 +197,33 @@ function App() {
     setAmIReady(false);
   };
 
+  // Host wants to kick a specific player
   const handleKick = (targetSocketId) => {
     socket.emit("kick_player", { room: user.roomId, targetSocketId });
   };
 
+  // Toggle my "Ready" status (Green badge)
   const handleToggleReady = () => {
-    setAmIReady(!amIReady);
-    socket.emit("toggle_ready", user.roomId);
+    setAmIReady(!amIReady); // Flip true/false
+    socket.emit("toggle_ready", user.roomId); // Tell server
   };
 
+  // Helper boolean: Am I the Host?
   const amIHost = socket?.id === hostId;
 
-  if (!user) return <AuthPage onAuthSuccess={handleAuthSuccess} />;
+  // --------------------------------------------------------------------------
+  // 5. RENDER LOGIC (What the user sees)
+  // --------------------------------------------------------------------------
+
+  // SCENE 1: If not logged in, show the Login/Register Page
+  if (!user) {
+    return <AuthPage onAuthSuccess={handleAuthSuccess} />;
+  }
 
   return (
     <div className="min-h-screen bg-gray-100 font-sans relative">
-      {/* --- VICTORY OVERLAY --- */}
+      
+      {/* OVERLAY: Victory Screen (Only shows if 'winner' state is set) */}
       {winner && (
         <div className="fixed inset-0 bg-black/80 flex flex-col items-center justify-center z-50">
           <div className="bg-white p-10 rounded-3xl shadow-2xl text-center border-8 border-yellow-400 transform scale-110 transition-transform">
@@ -152,8 +235,9 @@ function App() {
         </div>
       )}
 
-      {/* --- MAIN APP UI --- */}
+      {/* SCENE 2: The Main Application */}
       {!isGameStarted ? (
+        // A. LOBBY VIEW (Create or Join Room)
         <Lobby
           joinRoom={joinRoom}
           defaultName={user.username}
@@ -161,17 +245,19 @@ function App() {
           onLogout={handleLogout}
         />
       ) : (
+        // B. GAME ROOM VIEW
         <div className="flex flex-col items-center p-4">
           
-          {/* --- TOP BAR (FIXED LAYOUT) --- */}
+          {/* --- TOP BAR: Header, Timer, User Info --- */}
           <div className="w-full max-w-7xl bg-white shadow-md rounded-lg p-3 mb-4 flex items-center">
             
-            {/* 1. LEFT COLUMN (Title + Badge) - Flex 1 */}
+            {/* Left Section: Title & My Role Badge */}
             <div className="flex-1 flex items-center gap-4 justify-start">
               <h1 className="text-2xl font-black text-blue-600 tracking-tight whitespace-nowrap hidden md:block">
                 DoodleQuest
               </h1>
               
+              {/* Dynamic Badge: Shows if I am Waiting, Drawing, or Guessing */}
               <div className={`px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wider shadow-sm border ${
                 isDrawer 
                   ? "bg-yellow-100 text-yellow-700 border-yellow-200" 
@@ -181,11 +267,13 @@ function App() {
               </div>
             </div>
 
-            {/* 2. CENTER COLUMN (Timer + Word) - Flex 1 (Strictly Centered) */}
+            {/* Center Section: The Action Area */}
             <div className="flex-1 flex justify-center">
               {gameStatus === "waiting" ? (
+                // WAITING PHASE: Show buttons to get ready
                 <div className="flex flex-col items-center gap-1">
                   {amIHost ? (
+                    // Host sees "Start Game"
                     <button
                       onClick={handleStartGame}
                       className="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-full font-black text-sm md:text-base shadow-lg transition transform hover:scale-105 whitespace-nowrap"
@@ -193,6 +281,7 @@ function App() {
                       START GAME
                     </button>
                   ) : (
+                    // Players see "I'm Ready"
                     <button
                       onClick={handleToggleReady}
                       className={`px-6 py-2 rounded-full font-black text-sm md:text-base shadow-lg transition transform hover:scale-105 whitespace-nowrap ${
@@ -204,9 +293,11 @@ function App() {
                       {amIReady ? "NOT READY" : "I'M READY!"}
                     </button>
                   )}
+                  {/* Helper text for non-hosts */}
                   {!amIHost && amIReady && <p className="text-[10px] text-gray-400 animate-pulse">Waiting for host...</p>}
                 </div>
               ) : (
+                // PLAYING PHASE: Show Timer & Secret Word
                 <div className="flex items-center gap-4 bg-gray-50 px-4 py-2 rounded-xl border border-gray-100 shadow-inner">
                   <div className={`text-2xl font-black whitespace-nowrap ${timer < 10 ? "text-red-600 animate-pulse" : "text-gray-800"}`}>
                     ⏱️ {timer}s
@@ -219,7 +310,7 @@ function App() {
               )}
             </div>
 
-            {/* 3. RIGHT COLUMN (User + Exit) - Flex 1 (Aligned Right) */}
+            {/* Right Section: My Profile & Exit Button */}
             <div className="flex-1 flex flex-col items-end justify-center">
               <span className="font-black text-gray-800 text-sm md:text-lg tracking-tight leading-none truncate max-w-[150px]">
                 {user?.username}
@@ -242,15 +333,22 @@ function App() {
 
           </div>
 
-          {/* --- GAME COLUMNS --- */}
+          {/* --- MAIN GAME LAYOUT (3 Columns) --- */}
           <div className="w-full max-w-7xl h-[600px] border-4 border-gray-800 rounded-xl overflow-hidden shadow-2xl bg-white flex flex-row">
-            {/* LEFT: Leaderboard */}
+            
+            {/* 1. Left Column: Player Leaderboard */}
             <div className="w-1/5 h-full border-r-4 border-gray-800 hidden md:block bg-gray-50">
-              <PlayerList players={players} currentUserId={socket?.id} hostId={hostId} onKick={handleKick} />
+              <PlayerList 
+                players={players} 
+                currentUserId={socket?.id} 
+                hostId={hostId} 
+                onKick={handleKick} 
+              />
             </div>
 
-            {/* MIDDLE: Canvas */}
+            {/* 2. Middle Column: Whiteboard Canvas */}
             <div className="w-3/5 h-full relative border-r-4 border-gray-800 flex flex-col">
+              {/* Show drawing tools only if I am the drawer */}
               {isDrawer && (
                 <div className="bg-gray-100 p-2 flex justify-center gap-4 border-b-2 border-gray-300 shrink-0">
                   <button
@@ -267,13 +365,15 @@ function App() {
                   </button>
                 </div>
               )}
+              
               <div className="flex-1 relative w-full h-full">
                 <WhiteBoard roomId={user?.roomId} readOnly={!isDrawer} color={tool.color} size={tool.size} />
+                {/* Overlay to block interaction if it's not my turn */}
                 {!isDrawer && <div className="absolute inset-0 z-10 cursor-default"></div>}
               </div>
             </div>
 
-            {/* RIGHT: Chat */}
+            {/* 3. Right Column: Chat Box */}
             <div className="w-1/5 h-full flex flex-col bg-white">
               <Chat roomId={user?.roomId} userName={user?.username} />
             </div>
