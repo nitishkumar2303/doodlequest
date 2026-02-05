@@ -1,1 +1,55 @@
+/* 1. FONTS MUST BE THE VERY FIRST LINE */
+@import url('https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Fredoka:wght@300;400;600&display=swap');
+
+/* 2. Tailwind Imports come next */
 @import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Fredoka', sans-serif;
+    /* BACKGROUND: Graph Paper */
+    background-color: #fff9f0;
+    background-image: 
+      linear-gradient(#e5e7eb 1px, transparent 1px), 
+      linear-gradient(90deg, #e5e7eb 1px, transparent 1px);
+    background-size: 20px 20px;
+    color: #4b5563;
+  }
+  
+  /* Handwritten font for titles */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Patrick Hand', cursive;
+  }
+}
+
+@layer components {
+  /* THEME: Sketchy Card */
+  .sketch-card {
+    @apply bg-white border-2 border-gray-800 rounded-sm shadow-[4px_4px_0px_0px_rgba(0,0,0,0.8)] relative;
+  }
+  /* Tape effect */
+  .sketch-card::before {
+    content: '';
+    @apply absolute -top-3 left-1/2 -translate-x-1/2 w-32 h-6 bg-yellow-200 opacity-80 rotate-[-2deg] shadow-sm;
+  }
+
+  /* THEME: Primary Button (Blue Pen) */
+  .btn-sketch-primary {
+    @apply bg-blue-500 text-white font-bold text-xl px-6 py-2 border-2 border-black rounded-lg shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] transition-all hover:-translate-y-1 hover:shadow-[5px_5px_0px_0px_rgba(0,0,0,1)] active:translate-y-0 active:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] font-['Patrick_Hand'];
+  }
+
+  /* THEME: Secondary Button (White Eraser) */
+  .btn-sketch-secondary {
+    @apply bg-white text-gray-800 font-bold text-xl px-6 py-2 border-2 border-black rounded-lg shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] hover:bg-gray-50 transition-all active:translate-y-0 active:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] font-['Patrick_Hand'];
+  }
+
+  /* THEME: Danger Button (Red Marker) */
+  .btn-sketch-danger {
+    @apply bg-red-400 text-white font-bold px-3 py-1 border-2 border-black rounded shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:bg-red-500 font-['Patrick_Hand'];
+  }
+
+  /* THEME: Sketch Input */
+  .input-sketch {
+    @apply w-full bg-transparent border-b-2 border-gray-400 text-gray-800 text-2xl px-2 py-2 outline-none focus:border-blue-500 focus:border-b-4 transition-all font-['Patrick_Hand'] placeholder-gray-400 text-center;
+  }
+}

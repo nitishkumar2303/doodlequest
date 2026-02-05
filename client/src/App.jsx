@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSocket } from "./context/SocketContext";
-import "./App.css";
+import "./App.css"; 
 
-// Importing all our sub-components. 
-// These handle specific parts of the game (Drawing, Chatting, Player List, etc.)
 import WhiteBoard from "./components/WhiteBoard.jsx";
 import Lobby from "./components/Lobby.jsx";
 import Chat from "./components/Chat.jsx";
@@ -11,119 +9,44 @@ import PlayerList from "./components/PlayerList.jsx";
 import AuthPage from "./components/AuthPage.jsx";
 
 function App() {
-  // We use our custom hook to get the active socket connection.
-  // This is the bridge that lets us talk to the backend server.
   const socket = useSocket();
 
-  // --------------------------------------------------------------------------
-  // 1. STATE MANAGEMENT
-  // This is where we keep track of everything happening in the app.
-  // --------------------------------------------------------------------------
-  
-  // Who is currently logged in? (id, username, room they are in)
+  // STATE
   const [user, setUser] = useState(null); 
-  
-  // Are we in the Lobby (false) or inside a Game Room (true)?
   const [isGameStarted, setIsGameStarted] = useState(false);
+  const [isDrawer, setIsDrawer] = useState(false);
+  const [secretWord, setSecretWord] = useState("");
+  const [gameStatus, setGameStatus] = useState("waiting");
+  const [timer, setTimer] = useState(0); 
+  const [hostId, setHostId] = useState(null);
+  const [amIReady, setAmIReady] = useState(false); 
+  const [winner, setWinner] = useState(null); 
+  const [players, setPlayers] = useState([]); 
+  const [tool, setTool] = useState({ color: "black", size: 5 }); 
 
-  // --- Game Mechanics ---
-  const [isDrawer, setIsDrawer] = useState(false); // True if it's MY turn to draw
-  const [secretWord, setSecretWord] = useState(""); // The word to draw OR underscores for guessers
-  const [gameStatus, setGameStatus] = useState("waiting"); // 'waiting' = Lobby phase, 'playing' = Timer running
-  const [timer, setTimer] = useState(0); // The countdown timer shown at the top
-
-  // --- Room Coordination ---
-  const [hostId, setHostId] = useState(null); // The socket ID of the room owner (boss)
-  const [amIReady, setAmIReady] = useState(false); // Tracks if I clicked the "Ready" button
-
-  // --- Victory Screen ---
-  const [winner, setWinner] = useState(null); // If this has data, we show the big Trophy overlay
-
-  // --- UI Data ---
-  const [players, setPlayers] = useState([]); // List of everyone in the room (for the leaderboard)
-  const [tool, setTool] = useState({ color: "black", size: 5 }); // My current pencil settings
-
-  // --------------------------------------------------------------------------
-  // 2. INITIALIZATION
-  // --------------------------------------------------------------------------
-
-  // When the app loads, check if the user was already logged in previously.
-  // If yes, we restore their session so they don't have to login again.
+  // SOCKETS
   useEffect(() => {
     const savedUser = localStorage.getItem("user");
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
+    if (savedUser) setUser(JSON.parse(savedUser));
   }, []);
 
-  // --------------------------------------------------------------------------
-  // 3. SOCKET EVENT LISTENERS
-  // This is the most important part! We listen for messages from the server.
-  // --------------------------------------------------------------------------
   useEffect(() => {
-    // If the socket isn't ready yet, don't do anything.
     if (!socket) return;
-
-    // EVENT: The host started the game!
     const handleGameStart = ({ drawerId, wordLength }) => {
-      setGameStatus("playing"); // Switch UI to game mode
-      setAmIReady(false); // Reset ready status so I'm not stuck as "Ready" for the next round
-      
-      // Check if I am the chosen one (The Drawer)
-      if (socket.id === drawerId) {
-        setIsDrawer(true); // Enable my whiteboard tools
-      } else {
-        setIsDrawer(false); // Disable my whiteboard (View Only)
-        setSecretWord("_ ".repeat(wordLength)); // Show mystery blanks (e.g. "_ _ _ _")
-      }
+      setGameStatus("playing"); setAmIReady(false);
+      if (socket.id === drawerId) { setIsDrawer(true); } else { setIsDrawer(false); setSecretWord("_ ".repeat(wordLength)); }
     };
-
-    // EVENT: Receive the secret word (Only the Drawer gets the real word)
-    const handleWord = (word) => {
-      setSecretWord(word);
-    };
-
-    // EVENT: Someone joined, left, or changed score. Update the list.
-    const handleUpdatePlayers = (playerList) => {
-      setPlayers(playerList);
-    };
-
-    // EVENT: The server sent a timer update (tick... tock...)
-    const handleTimerUpdate = (time) => {
-      setTimer(time);
-    };
-
-    // EVENT: Update who the Host is (in case the old host disconnected)
-    const handleRoomData = ({ hostId }) => {
-      setHostId(hostId);
-    };
-
-    // EVENT: The round finished! Show who won.
+    const handleWord = (word) => setSecretWord(word);
+    const handleUpdatePlayers = (list) => setPlayers(list);
+    const handleTimerUpdate = (t) => setTimer(t);
+    const handleRoomData = ({ hostId }) => setHostId(hostId);
     const handleGameOver = ({ winnerName, winnerScore }) => {
-      // 1. Show the Victory Overlay
       setWinner({ name: winnerName, score: winnerScore });
-      
-      // 2. Reset the game state back to "Waiting" mode
-      setGameStatus("waiting");
-      setSecretWord("Round Over");
-      setIsDrawer(false);
-      setTimer(0);
-      setAmIReady(false); // Important: Force everyone to click Ready again for next round
-      
-      // 3. Hide the overlay after 5 seconds automatically
-      setTimeout(() => {
-        setWinner(null);
-        setSecretWord("");
-      }, 5000);
+      setGameStatus("waiting"); setSecretWord("Done!"); setIsDrawer(false); setTimer(0); setAmIReady(false);
+      setTimeout(() => { setWinner(null); setSecretWord(""); }, 5000);
     };
+    const handleKicked = () => { alert("Host kicked you."); handleLeaveRoom(); };
 
-    // EVENT: I got kicked out of the room by the Host.
-    const handleKicked = () => {
-      alert("You were kicked from the room.");
-      handleLeaveRoom(); // Trigger the leave logic to clean up my screen
-    };
-
-    // --- Attach all these listeners to the socket ---
     socket.on("game_started", handleGameStart);
     socket.on("your_word", handleWord);
     socket.on("update_players", handleUpdatePlayers);
@@ -132,8 +55,6 @@ function App() {
     socket.on("room_data", handleRoomData);
     socket.on("kicked", handleKicked);
 
-    // --- Cleanup: Remove listeners when this component unmounts ---
-    // This prevents bugs where events fire multiple times.
     return () => {
       socket.off("game_started", handleGameStart);
       socket.off("your_word", handleWord);
@@ -143,238 +64,118 @@ function App() {
       socket.off("room_data", handleRoomData);
       socket.off("kicked", handleKicked);
     };
-  }, [socket]); // Run this effect whenever the 'socket' object changes
+  }, [socket]);
 
-  // --------------------------------------------------------------------------
-  // 4. ACTION HANDLERS (Button Clicks)
-  // --------------------------------------------------------------------------
-
-  // Called when user enters a Room ID in the Lobby
+  // ACTIONS
   const joinRoom = ({ roomId }) => {
     if (!user) return;
-    
-    // Tell server we are joining
-    socket.emit("join_room", { 
-      room: roomId, 
-      name: user.username, 
-      userId: user.id 
-    });
-    
-    // Update local state to show the Game UI
+    socket.emit("join_room", { room: roomId, name: user.username, userId: user.id });
     setUser((prev) => ({ ...prev, roomId }));
     setIsGameStarted(true);
     setAmIReady(false);
   };
-
-  // Called when Host clicks "Start Game"
-  const handleStartGame = () => {
-    socket.emit("start_game", user.roomId);
-  };
-
-  // Called when AuthPage finishes login successfully
-  const handleAuthSuccess = (userData) => {
-    setUser(userData);
-  };
-
-  // Log out: Clear everything and go back to Login screen
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    setUser(null);
-    setIsGameStarted(false);
-  };
-
-  // Gracefully leave the room without logging out entirely
-  const handleLeaveRoom = () => {
-    if (user?.roomId) {
-      socket.emit("leave_room", { room: user.roomId });
-    }
-    // Reset all game state so we are fresh for the next room
-    setGameStatus("waiting");
-    setIsGameStarted(false);
-    setPlayers([]);
-    setUser((prev) => ({ ...prev, roomId: null }));
-    setAmIReady(false);
-  };
-
-  // Host wants to kick a specific player
-  const handleKick = (targetSocketId) => {
-    socket.emit("kick_player", { room: user.roomId, targetSocketId });
-  };
-
-  // Toggle my "Ready" status (Green badge)
-  const handleToggleReady = () => {
-    setAmIReady(!amIReady); // Flip true/false
-    socket.emit("toggle_ready", user.roomId); // Tell server
-  };
-
-  // Helper boolean: Am I the Host?
+  const handleStartGame = () => socket.emit("start_game", user.roomId);
+  const handleAuthSuccess = (u) => setUser(u);
+  const handleLeaveRoom = () => { if (user?.roomId) socket.emit("leave_room", { room: user.roomId }); setGameStatus("waiting"); setIsGameStarted(false); setPlayers([]); setUser((prev) => ({ ...prev, roomId: null })); setAmIReady(false); };
+  const handleKick = (id) => socket.emit("kick_player", { room: user.roomId, targetSocketId: id });
+  const handleToggleReady = () => { setAmIReady(!amIReady); socket.emit("toggle_ready", user.roomId); };
+  const handleLogout = () => { localStorage.removeItem("token"); localStorage.removeItem("user"); setUser(null); setIsGameStarted(false); };
   const amIHost = socket?.id === hostId;
 
-  // --------------------------------------------------------------------------
-  // 5. RENDER LOGIC (What the user sees)
-  // --------------------------------------------------------------------------
-
-  // SCENE 1: If not logged in, show the Login/Register Page
-  if (!user) {
-    return <AuthPage onAuthSuccess={handleAuthSuccess} />;
-  }
+  // RENDER
+  if (!user) return <AuthPage onAuthSuccess={handleAuthSuccess} />;
 
   return (
-    <div className="min-h-screen bg-gray-100 font-sans relative">
+    <div className="min-h-screen p-4 flex flex-col items-center justify-center font-['Fredoka'] relative">
       
-      {/* OVERLAY: Victory Screen (Only shows if 'winner' state is set) */}
+      {/* WINNER STICKER */}
       {winner && (
-        <div className="fixed inset-0 bg-black/80 flex flex-col items-center justify-center z-50">
-          <div className="bg-white p-10 rounded-3xl shadow-2xl text-center border-8 border-yellow-400 transform scale-110 transition-transform">
-            <h2 className="text-5xl font-black text-yellow-500 mb-4">🏆 WINNER! 🏆</h2>
-            <p className="text-4xl font-bold text-gray-800 mb-2">{winner.name || "No one"}</p>
-            <p className="text-xl text-gray-500 font-mono">Score: {winner.score || 0} pts</p>
+        <div className="fixed inset-0 bg-white/80 flex flex-col items-center justify-center z-50">
+          <div className="sketch-card p-12 text-center transform rotate-2 animate-bounce border-4 border-yellow-400">
+            <h2 className="text-6xl font-black text-gray-800 mb-2 font-['Patrick_Hand']">🏆 {winner.name} Wins!</h2>
+            <div className="text-3xl font-bold text-yellow-600 bg-yellow-100 px-6 py-2 rounded-full inline-block">+{winner.score} Points</div>
           </div>
-          <p className="text-white mt-8 text-lg font-bold animate-pulse">Next round starting soon...</p>
         </div>
       )}
 
-      {/* SCENE 2: The Main Application */}
       {!isGameStarted ? (
-        // A. LOBBY VIEW (Create or Join Room)
-        <Lobby
-          joinRoom={joinRoom}
-          defaultName={user.username}
-          userId={user.id}
-          onLogout={handleLogout}
-        />
+        <Lobby joinRoom={joinRoom} defaultName={user.username} userId={user.id} onLogout={handleLogout} />
       ) : (
-        // B. GAME ROOM VIEW
-        <div className="flex flex-col items-center p-4">
+        <div className="w-full max-w-7xl flex flex-col gap-6 animate-fadeIn">
           
-          {/* --- TOP BAR: Header, Timer, User Info --- */}
-          <div className="w-full max-w-7xl bg-white shadow-md rounded-lg p-3 mb-4 flex items-center">
-            
-            {/* Left Section: Title & My Role Badge */}
-            <div className="flex-1 flex items-center gap-4 justify-start">
-              <h1 className="text-2xl font-black text-blue-600 tracking-tight whitespace-nowrap hidden md:block">
-                DoodleQuest
+          {/* TOP BAR */}
+          <div className="sketch-card px-8 py-4 flex items-center justify-between pt-6">
+            <div className="flex items-center gap-6">
+              <h1 className="text-3xl font-bold text-gray-800 font-['Patrick_Hand'] hidden md:block">
+                Doodle<span className="text-blue-500">Quest</span>
               </h1>
-              
-              {/* Dynamic Badge: Shows if I am Waiting, Drawing, or Guessing */}
-              <div className={`px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wider shadow-sm border ${
-                isDrawer 
-                  ? "bg-yellow-100 text-yellow-700 border-yellow-200" 
-                  : "bg-blue-50 text-blue-600 border-blue-100"
-              }`}>
-                {gameStatus === "waiting" ? "⏳ WAITING" : isDrawer ? "✏️ DRAWER" : "👀 GUESSER"}
+              <div className={`px-4 py-1 rounded-full font-bold uppercase text-xs tracking-wider border-2 border-black ${isDrawer ? "bg-orange-300" : "bg-blue-300"}`}>
+                {gameStatus === "waiting" ? "Waiting..." : isDrawer ? "✏️ Draw!" : "👀 Guess!"}
               </div>
             </div>
 
-            {/* Center Section: The Action Area */}
             <div className="flex-1 flex justify-center">
               {gameStatus === "waiting" ? (
-                // WAITING PHASE: Show buttons to get ready
-                <div className="flex flex-col items-center gap-1">
-                  {amIHost ? (
-                    // Host sees "Start Game"
-                    <button
-                      onClick={handleStartGame}
-                      className="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-full font-black text-sm md:text-base shadow-lg transition transform hover:scale-105 whitespace-nowrap"
-                    >
-                      START GAME
-                    </button>
-                  ) : (
-                    // Players see "I'm Ready"
-                    <button
-                      onClick={handleToggleReady}
-                      className={`px-6 py-2 rounded-full font-black text-sm md:text-base shadow-lg transition transform hover:scale-105 whitespace-nowrap ${
-                        amIReady 
-                          ? "bg-gray-400 text-gray-700 hover:bg-gray-500" 
-                          : "bg-blue-500 text-white hover:bg-blue-600"
-                      }`}
-                    >
-                      {amIReady ? "NOT READY" : "I'M READY!"}
-                    </button>
-                  )}
-                  {/* Helper text for non-hosts */}
-                  {!amIHost && amIReady && <p className="text-[10px] text-gray-400 animate-pulse">Waiting for host...</p>}
-                </div>
+                amIHost ? (
+                  <button onClick={handleStartGame} className="btn-sketch-primary bg-green-400 hover:bg-green-300 text-green-900 border-green-900 animate-pulse">Start Class!</button>
+                ) : (
+                  <button onClick={handleToggleReady} className={`btn-sketch-secondary ${amIReady ? "bg-green-100 text-green-700 border-green-500" : "bg-red-50 text-red-500"}`}>
+                    {amIReady ? "✅ I'm Ready!" : "❌ Not Ready"}
+                  </button>
+                )
               ) : (
-                // PLAYING PHASE: Show Timer & Secret Word
-                <div className="flex items-center gap-4 bg-gray-50 px-4 py-2 rounded-xl border border-gray-100 shadow-inner">
-                  <div className={`text-2xl font-black whitespace-nowrap ${timer < 10 ? "text-red-600 animate-pulse" : "text-gray-800"}`}>
-                    ⏱️ {timer}s
-                  </div>
-                  <div className="w-px h-6 bg-gray-300"></div>
-                  <p className="text-lg font-mono tracking-[0.2em] font-bold text-gray-700 whitespace-nowrap">
-                    {secretWord}
-                  </p>
+                <div className="flex items-center gap-4 bg-gray-100 px-8 py-2 rounded-lg border-2 border-gray-300">
+                  <span className={`text-3xl font-bold font-['Patrick_Hand'] ${timer < 10 ? "text-red-500" : "text-gray-700"}`}>{timer}s</span>
+                  <div className="w-0.5 h-8 bg-gray-300"></div>
+                  <span className="text-2xl font-bold font-['Patrick_Hand'] tracking-widest uppercase text-blue-600">{secretWord}</span>
                 </div>
               )}
             </div>
 
-            {/* Right Section: My Profile & Exit Button */}
-            <div className="flex-1 flex flex-col items-end justify-center">
-              <span className="font-black text-gray-800 text-sm md:text-lg tracking-tight leading-none truncate max-w-[150px]">
-                {user?.username}
-              </span>
-              
-              <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-2 py-1 mt-1 border border-gray-200">
-                 <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest hidden sm:block">
-                   ROOM: {user?.roomId}
-                 </span>
-                 <div className="w-px h-3 bg-gray-300 hidden sm:block"></div> 
-                 <button 
-                   onClick={handleLeaveRoom}
-                   className="text-[10px] font-black text-red-500 hover:text-red-700 hover:bg-red-100 px-1 rounded transition-colors whitespace-nowrap"
-                   title="Leave Room"
-                 >
-                   EXIT 🚪
-                 </button>
-              </div>
+            <div className="flex items-center gap-4">
+               <div className="flex flex-col items-end">
+                 <span className="font-bold text-gray-700 font-['Patrick_Hand'] text-lg">{user?.username}</span>
+                 <div className="bg-yellow-50 text-yellow-800 px-2 py-0.5 border border-yellow-200 text-sm font-bold transform rotate-1">Room: {user?.roomId}</div>
+               </div>
+               <button onClick={handleLeaveRoom} className="btn-sketch-danger">Exit</button>
             </div>
-
           </div>
 
-          {/* --- MAIN GAME LAYOUT (3 Columns) --- */}
-          <div className="w-full max-w-7xl h-[600px] border-4 border-gray-800 rounded-xl overflow-hidden shadow-2xl bg-white flex flex-row">
-            
-            {/* 1. Left Column: Player Leaderboard */}
-            <div className="w-1/5 h-full border-r-4 border-gray-800 hidden md:block bg-gray-50">
-              <PlayerList 
-                players={players} 
-                currentUserId={socket?.id} 
-                hostId={hostId} 
-                onKick={handleKick} 
-              />
-            </div>
-
-            {/* 2. Middle Column: Whiteboard Canvas */}
-            <div className="w-3/5 h-full relative border-r-4 border-gray-800 flex flex-col">
-              {/* Show drawing tools only if I am the drawer */}
-              {isDrawer && (
-                <div className="bg-gray-100 p-2 flex justify-center gap-4 border-b-2 border-gray-300 shrink-0">
-                  <button
-                    onClick={() => setTool({ color: "black", size: 5 })}
-                    className={`flex items-center gap-2 px-3 py-1 rounded font-bold text-sm transition ${tool.color === "black" ? "bg-blue-600 text-white shadow" : "bg-white text-gray-700 border"}`}
-                  >
-                    ✏️ Pencil
-                  </button>
-                  <button
-                    onClick={() => setTool({ color: "white", size: 20 })}
-                    className={`flex items-center gap-2 px-3 py-1 rounded font-bold text-sm transition ${tool.color === "white" ? "bg-blue-600 text-white shadow" : "bg-white text-gray-700 border"}`}
-                  >
-                    🧼 Eraser
-                  </button>
-                </div>
-              )}
-              
-              <div className="flex-1 relative w-full h-full">
-                <WhiteBoard roomId={user?.roomId} readOnly={!isDrawer} color={tool.color} size={tool.size} />
-                {/* Overlay to block interaction if it's not my turn */}
-                {!isDrawer && <div className="absolute inset-0 z-10 cursor-default"></div>}
+          {/* MAIN GRID */}
+          <div className="flex flex-col md:flex-row gap-6 h-[600px]">
+            {/* Players */}
+            <div className="sketch-card w-full md:w-64 p-4 overflow-hidden flex flex-col pt-6">
+              <h3 className="text-gray-500 font-bold text-xl font-['Patrick_Hand'] mb-4 text-center border-b-2 border-dashed border-gray-200 pb-2">Classmates</h3>
+              <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                <PlayerList players={players} currentUserId={socket?.id} hostId={hostId} onKick={handleKick} />
               </div>
             </div>
 
-            {/* 3. Right Column: Chat Box */}
-            <div className="w-1/5 h-full flex flex-col bg-white">
+            {/* Canvas */}
+            <div className="sketch-card flex-1 p-2 relative flex flex-col overflow-hidden pt-6">
+              {isDrawer && (
+                <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-20 bg-white p-2 rounded-lg border-2 border-gray-800 shadow-md flex gap-2">
+                   {/* COLOR PALETTE */}
+                   {['black', '#ef4444', '#3b82f6', '#22c55e', '#a855f7', '#f97316'].map(c => (
+                     <button key={c} onClick={() => setTool({ ...tool, color: c, size: 5 })} className={`w-8 h-8 rounded-full border-2 border-white shadow-sm hover:scale-110 ${tool.color === c && tool.size === 5 ? 'ring-2 ring-gray-400 scale-110' : ''}`} style={{ backgroundColor: c }} />
+                   ))}
+                   <div className="w-0.5 h-8 bg-gray-200 mx-1"></div>
+                   
+                   {/* ERASER BUTTON - Sets color to white and size to 20 */}
+                   <button onClick={() => setTool({ ...tool, color: 'white', size: 20 })} className={`text-2xl hover:-translate-y-1 ${tool.color === 'white' ? 'opacity-100 scale-125' : 'opacity-50'}`}>🧽</button>
+                   
+                   {/* PENCIL BUTTON - Resets to black and size 5 */}
+                   <button onClick={() => setTool({ ...tool, color: 'black', size: 5 })} className="text-2xl hover:-translate-y-1">✏️</button>
+                </div>
+              )}
+              <div className="flex-1 border-2 border-dashed border-gray-300 rounded bg-white relative cursor-crosshair m-2">
+                <WhiteBoard roomId={user?.roomId} readOnly={gameStatus === "playing" && !isDrawer} color={tool.color} size={tool.size} />
+                {gameStatus === "playing" && !isDrawer && <div className="absolute inset-0 z-10 cursor-default"></div>}
+              </div>
+            </div>
+
+            {/* Chat */}
+            <div className="sketch-card w-full md:w-80 p-0 overflow-hidden flex flex-col pt-6">
               <Chat roomId={user?.roomId} userName={user?.username} />
             </div>
           </div>

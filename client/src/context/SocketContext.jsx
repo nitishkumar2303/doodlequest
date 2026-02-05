@@ -17,12 +17,15 @@ export const SocketProvider = ({ children }) => {
 
   useEffect(() => {
     // A. Determine which server to connect to.
-    // In production, this uses the variable from Vercel/Render.
-    // In local development, it falls back to localhost:3001.
-    const serverUrl = import.meta.env.VITE_SERVER_URL || "http://localhost:3001";
+    // ⚠️ HARDCODED FIX: We force the app to talk to Render, never localhost.
+    const serverUrl = "https://doodlequest-dfgy.onrender.com";
     
     // B. Initialize the connection
-    const newSocket = io(serverUrl);
+    // We add 'transports' to ensure it works smoothly on cloud networks like Render
+    const newSocket = io(serverUrl, {
+      transports: ["websocket", "polling"]
+    });
+    
     setSocket(newSocket);
 
     // C. Cleanup Function

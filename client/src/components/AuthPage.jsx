@@ -1,140 +1,110 @@
 import { useState } from "react";
 import axios from "axios";
 
-// Different pixel-art avatar styles provided by DiceBear API
+// CONSTANTS
 const AVATAR_STYLES = ["felix", "aneka", "zorg", "pixel-art", "bottts"];
 
 const AuthPage = ({ onAuthSuccess }) => {
-  // --------------------------------------------------------------------------
-  // STATE MANAGEMENT
-  // --------------------------------------------------------------------------
-  
-  // Controls whether we show the "Login" form or the "Register" form
   const [isLogin, setIsLogin] = useState(true); 
-  
-  // Stores error messages from the backend (e.g., "Wrong password")
   const [error, setError] = useState("");
-  
-  // Prevents double-clicking the submit button while waiting for server response
   const [loading, setLoading] = useState(false);
-
-  // Unified state for all input fields
   const [formData, setFormData] = useState({
     username: "",
     password: "",
-    avatar: "felix", // Default avatar seed (used only for registration)
+    avatar: "felix",
   });
 
-  // --------------------------------------------------------------------------
-  // HANDLERS
-  // --------------------------------------------------------------------------
-
-  // Updates state whenever the user types in the input boxes
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  // Handles the actual Login / Register process
   const handleSubmit = async (e) => {
-    e.preventDefault(); // Stop the page from reloading
-    setError(""); // Clear old errors
-    setLoading(true); // Disable button
+    e.preventDefault();
+    setError("");
+    setLoading(true);
 
-    // Get the backend URL from environment variables (Vite specific)
-    const API_URL = import.meta.env.VITE_API_URL;
-
-    // Decide which endpoint to hit based on the mode
+    const API_URL = import.meta.env.VITE_API_URL || "https://doodlequest-dfgy.onrender.com";
     const endpoint = isLogin ? "/api/auth/login" : "/api/auth/register";
     const apiUrl = `${API_URL}${endpoint}`;
 
     try {
-      // Send the request to the server
       const { data } = await axios.post(apiUrl, formData);
-
-      // If successful:
-      // 1. Save the JWT Token (so we stay logged in on refresh)
       localStorage.setItem("token", data.token);
-      // 2. Save basic user info (ID, name)
       localStorage.setItem("user", JSON.stringify(data.user));
-
-      // 3. Notify the parent component (App.jsx) that we are in!
       onAuthSuccess(data.user);
     } catch (err) {
-      // If failed, show the error message from the server
       setError(err.response?.data?.message || "Something went wrong");
     } finally {
-      setLoading(false); // Re-enable the button
+      setLoading(false);
     }
   };
 
-  // --------------------------------------------------------------------------
-  // RENDER UI
-  // --------------------------------------------------------------------------
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
-      <div className="w-full max-w-md bg-gray-800 p-8 rounded-lg shadow-2xl border border-gray-700">
+    <div className="min-h-screen flex items-center justify-center p-4 font-['Patrick_Hand']">
+      
+      {/* SKETCH CARD */}
+      <div className="sketch-card w-full max-w-md p-10 pt-12">
         
-        {/* HEADER: Changes based on mode */}
-        <h2 className="text-3xl font-bold text-center mb-6 text-blue-500">
-          {isLogin ? "Welcome Back!" : "Join DoodleQuest"}
-        </h2>
+        {/* Header */}
+        <div className="text-center mb-8">
+          <h2 className="text-5xl font-bold text-gray-800 transform -rotate-2">
+            {isLogin ? "Welcome Back!" : "New Artist?"}
+          </h2>
+          <p className="text-xl text-gray-500 mt-2">
+            {isLogin ? "Grab your pencil ✏️" : "Join the art club 🎨"}
+          </p>
+        </div>
 
-        {/* ERROR ALERT: Only shows if there is an error */}
+        {/* Error */}
         {error && (
-          <div className="bg-red-500 text-white p-2 rounded mb-4 text-sm text-center">
-            {error}
+          <div className="bg-red-100 border-2 border-red-400 text-red-600 p-2 mb-6 text-center font-bold text-lg rotate-1">
+            🖍️ {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="space-y-6">
           
-          {/* USERNAME INPUT */}
           <div>
-            <label className="block text-gray-400 text-sm mb-1">Username</label>
+            <label className="block text-gray-600 text-xl font-bold mb-1">Who are you?</label>
             <input
               type="text"
               name="username"
               value={formData.username}
               onChange={handleChange}
-              className="w-full p-3 rounded bg-gray-700 border border-gray-600 focus:border-blue-500 outline-none"
-              placeholder="Enter your name"
+              className="input-sketch"
+              placeholder="Your Name"
               required
             />
           </div>
 
-          {/* PASSWORD INPUT */}
           <div>
-            <label className="block text-gray-400 text-sm mb-1">Password</label>
+            <label className="block text-gray-600 text-xl font-bold mb-1">Secret Code</label>
             <input
               type="password"
               name="password"
               value={formData.password}
               onChange={handleChange}
-              className="w-full p-3 rounded bg-gray-700 border border-gray-600 focus:border-blue-500 outline-none"
-              placeholder="••••••"
+              className="input-sketch"
+              placeholder="Password"
               required
             />
           </div>
 
-          {/* AVATAR SELECTION: Only show this when Registering */}
           {!isLogin && (
             <div>
-              <label className="block text-gray-400 text-sm mb-2">
-                Choose Avatar
-              </label>
-              <div className="flex justify-center gap-3">
+              <label className="block text-gray-600 text-xl font-bold mb-3">Pick a Face</label>
+              <div className="flex justify-center gap-2 flex-wrap border-2 border-dashed border-gray-300 p-4 rounded-lg">
                 {AVATAR_STYLES.map((seed) => (
                   <img
                     key={seed}
-                    // Generate avatar URL dynamically
                     src={`https://api.dicebear.com/9.x/pixel-art/svg?seed=${seed}`}
                     alt="avatar"
-                    // Clicking sets this as the selected avatar
                     onClick={() => setFormData({ ...formData, avatar: seed })}
-                    className={`w-12 h-12 rounded-full cursor-pointer border-2 transition ${
+                    className={`w-14 h-14 cursor-pointer transition-transform hover:rotate-6 hover:scale-110 ${
                       formData.avatar === seed
-                        ? "border-blue-500 scale-110" // Highlight selected one
-                        : "border-transparent opacity-50 hover:opacity-100"
+                        ? "border-4 border-blue-400 rounded-full bg-blue-50"
+                        : "opacity-60 hover:opacity-100"
                     }`}
                   />
                 ))}
@@ -142,24 +112,17 @@ const AuthPage = ({ onAuthSuccess }) => {
             </div>
           )}
 
-          {/* SUBMIT BUTTON: Changes text based on loading state & mode */}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded transition disabled:opacity-50"
-          >
-            {loading ? "Processing..." : isLogin ? "Login" : "Create Account"}
+          <button type="submit" disabled={loading} className="btn-sketch-primary w-full mt-4 text-2xl">
+            {loading ? "Sketching..." : isLogin ? "Enter Studio 🚪" : "Sign Me Up! 📝"}
           </button>
         </form>
 
-        {/* TOGGLE LINK: Switch between Login and Register */}
-        <div className="mt-6 text-center text-sm text-gray-400">
-          {isLogin ? "New here? " : "Already have an account? "}
+        <div className="mt-8 text-center">
           <button
             onClick={() => setIsLogin(!isLogin)}
-            className="text-blue-400 hover:underline"
+            className="text-gray-400 text-lg hover:text-blue-500 hover:underline decoration-wavy underline-offset-4"
           >
-            {isLogin ? "Create Account" : "Login"}
+            {isLogin ? "Need a pass? Register" : "Have a pass? Login"}
           </button>
         </div>
       </div>
